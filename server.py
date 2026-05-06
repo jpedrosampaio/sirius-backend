@@ -5313,20 +5313,18 @@ Forneça:
 
 Responda em português de forma direta e motivadora."""
 
-try:
+    try:
         response = await call_llm(
             prompt=prompt,
             session_id=f"recommendations_{user.user_id}",
             system_message="Você é um personal trainer e nutricionista experiente. Forneça recomendações práticas e motivadoras.",
             user_id=user.user_id
         )
-        
-return {
+        return {
             "recommendations": response,
             "based_on": latest,
             "workouts_analyzed": len(workouts)
         }
-
     except Exception as e:
         logging.error(f"Recommendations generation failed: {e}")
         return {
