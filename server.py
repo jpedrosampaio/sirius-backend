@@ -13221,8 +13221,8 @@ async def export_nutrition(request: Request, format: str, session_token: Optiona
 
 
 # ========== TELEGRAM BOT INTEGRATION ==========
-import httpx
-import secrets
+# import httpx
+# import secrets
 # from telegram import Bot, Update
 
 # TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN', '')
@@ -13230,8 +13230,8 @@ telegram_bot = None
 # if TELEGRAM_BOT_TOKEN:
 #     try:
 #         telegram_bot = Bot(token=TELEGRAM_BOT_TOKEN)
-    except Exception as e:
-        logging.error(f"Failed to initialize Telegram bot: {e}")
+# except Exception as e:
+#     logging.error(f"Failed to initialize Telegram bot: {e}")
 
 @api_router.post("/telegram/setup-webhook")
 async def setup_telegram_webhook(request: Request, session_token: Optional[str] = Cookie(None)):
