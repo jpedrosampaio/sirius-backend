@@ -11,8 +11,7 @@ from typing import List, Optional, Dict, Any
 import uuid
 from datetime import datetime, timezone, timedelta
 import bcrypt
-from google import genai
-from google.genai import types
+from google.generativeai import Client, types
 import aiofiles
 import base64
 
@@ -30,7 +29,7 @@ GOOGLE_GEMINI_API_KEY = os.environ.get('GOOGLE_GEMINI_API_KEY', '')
 gemini_client = None
 if GOOGLE_GEMINI_API_KEY:
     try:
-        gemini_client = genai.Client(api_key=GOOGLE_GEMINI_API_KEY)
+        gemini_client = Client(api_key=GOOGLE_GEMINI_API_KEY)
     except Exception as e:
         logging.error(f"Failed to initialize Gemini client: {e}")
 
@@ -63,7 +62,7 @@ async def call_llm(prompt: str, session_id: str = "default", system_message: str
         return "⚠️ Serviço de IA indisponível no momento. Por favor, configure a API key do Google Gemini."
     
     try:
-        user_client = genai.Client(api_key=api_key_to_use)
+        user_client = Client(api_key=api_key_to_use)
     except Exception as e:
         logging.error(f"Failed to initialize Gemini client: {e}")
         if raise_on_error:
