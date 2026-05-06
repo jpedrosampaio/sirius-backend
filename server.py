@@ -11,7 +11,7 @@ from typing import List, Optional, Dict, Any
 import uuid
 from datetime import datetime, timezone, timedelta
 import bcrypt
-from google.generativeai import Client, types
+# import google.generativeai as genai
 import aiofiles
 import base64
 
@@ -24,22 +24,10 @@ mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
-# Initialize Google Gemini client
-GOOGLE_GEMINI_API_KEY = os.environ.get('GOOGLE_GEMINI_API_KEY', '')
-gemini_client = None
-if GOOGLE_GEMINI_API_KEY:
-    try:
-        gemini_client = Client(api_key=GOOGLE_GEMINI_API_KEY)
-    except Exception as e:
-        logging.error(f"Failed to initialize Gemini client: {e}")
-
-# Model to use - can be changed if quota issues occur
 GEMINI_MODEL = "gemini-2.5-flash"
-
 GEMINI_FALLBACK_MODEL = "gemini-2.0-flash-lite"
 
 async def get_user_api_key(user_id: str) -> Optional[str]:
-    """Get user's Gemini API key from database"""
     try:
         user_doc = await db.users.find_one({"user_id": user_id}, {"gemini_api_key": 1})
         if user_doc and user_doc.get("gemini_api_key"):
@@ -49,48 +37,26 @@ async def get_user_api_key(user_id: str) -> Optional[str]:
     return None
 
 async def call_llm(prompt: str, session_id: str = "default", system_message: str = "Você é um assistente financeiro inteligente.", raise_on_error: bool = False, user_api_key: Optional[str] = None, user_id: Optional[str] = None) -> str:
-    """Helper function to call LLM using Google Gemini with retry and fallback model"""
-    if user_id and not user_api_key:
-        user_api_key = await get_user_api_key(user_id)
-    
-    api_key_to_use = user_api_key or GOOGLE_GEMINI_API_KEY
-    
-    if not api_key_to_use:
-        logging.warning("Gemini API key not provided")
-        if raise_on_error:
-            raise Exception("Gemini API key not configured")
-        return "⚠️ Serviço de IA indisponível no momento. Por favor, configure a API key do Google Gemini."
-    
-    try:
-        user_client = Client(api_key=api_key_to_use)
-    except Exception as e:
-        logging.error(f"Failed to initialize Gemini client: {e}")
-        if raise_on_error:
-            raise Exception(f"Failed to initialize Gemini client: {e}")
-        return "⚠️ Serviço de IA indisponível. Chave API inválida."
-    
-    models_to_try = [GEMINI_MODEL, GEMINI_FALLBACK_MODEL]
+    api_key = user_api_key or GOOGLE_GEMINI_API_KEY
+    if not api_key:
+        return "⚠️ Serviço de IA indisponível. Configure a API key."
+
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={api_key}"
+    payload = {"contents": [{"parts": [{"text": prompt}]}], "systemInstruction": {"parts": [{"text": system_message}]}}
+
     last_error = None
-    
-    for model_name in models_to_try:
+    for model in [GEMINI_MODEL, GEMINI_FALLBACK_MODEL]:
         try:
-            response = user_client.models.generate_content(
-                model=model_name,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    system_instruction=system_message
-                )
-            )
-            return response.text
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+            resp = requests.post(url, json=payload, timeout=30)
+            if resp.status_code == 200:
+                data = resp.json()
+                return data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "⚠️ Erro ao processar")
+            else:
+                last_error = resp.text
         except Exception as e:
             last_error = e
-            logging.warning(f"LLM call failed with model {model_name}: {e}")
-            continue
-    
-    logging.error(f"All LLM models failed. Last error: {last_error}")
-    if raise_on_error:
-        raise last_error
-    return f"⚠️ Erro ao processar sua solicitação: {str(last_error)}"
+    return f"⚠️ Erro: {last_error}"
 
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
