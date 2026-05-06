@@ -5325,7 +5325,7 @@ try:
             "based_on": latest,
             "workouts_analyzed": len(workouts)
         }
-        
+    
     except Exception as e:
         logging.error(f"Recommendations generation failed: {e}")
         return {
