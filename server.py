@@ -6,7 +6,7 @@ import os
 import logging
 import json
 from pathlib import Path
-from pydantic import BaseModel, Field, ConfigDict, EmailStr
+from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional, Dict, Any
 import uuid
 from datetime import datetime, timezone, timedelta
@@ -81,7 +81,7 @@ class UserCreate(BaseModel):
     gemini_api_key: Optional[str] = None
 
 class UserLogin(BaseModel):
-    email: EmailStr
+    email: str
     password: str
 
 class SessionData(BaseModel):
