@@ -75,7 +75,7 @@ class User(BaseModel):
     created_at: datetime
 
 class UserCreate(BaseModel):
-    email: EmailStr
+    email: str
     password: str
     name: str
     gemini_api_key: Optional[str] = None
