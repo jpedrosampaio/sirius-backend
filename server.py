@@ -13227,6 +13227,7 @@ async def export_nutrition(request: Request, format: str, session_token: Optiona
 
 # TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN', '')
 telegram_bot = None
+TELEGRAM_BOT_TOKEN = ''
 # if TELEGRAM_BOT_TOKEN:
 #     try:
 #         telegram_bot = Bot(token=TELEGRAM_BOT_TOKEN)
