@@ -24,6 +24,8 @@ mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
+GOOGLE_GEMINI_API_KEY = os.environ.get('GOOGLE_GEMINI_API_KEY', '')
+
 GEMINI_MODEL = "gemini-2.5-flash"
 GEMINI_FALLBACK_MODEL = "gemini-2.0-flash-lite"
 
@@ -38,25 +40,39 @@ async def get_user_api_key(user_id: str) -> Optional[str]:
 
 async def call_llm(prompt: str, session_id: str = "default", system_message: str = "Você é um assistente financeiro inteligente.", raise_on_error: bool = False, user_api_key: Optional[str] = None, user_id: Optional[str] = None) -> str:
     api_key = user_api_key or GOOGLE_GEMINI_API_KEY
+    
     if not api_key:
-        return "⚠️ Serviço de IA indisponível. Configure a API key."
-
+        logging.warning("GOOGLE_GEMINI_API_KEY not configured")
+        return "⚠️ Serviço de IA indisponível. Configure a API key no servidor."
+    
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={api_key}"
     payload = {"contents": [{"parts": [{"text": prompt}]}], "systemInstruction": {"parts": [{"text": system_message}]}}
+    
+    logging.info(f"Calling Gemini with model: {GEMINI_MODEL}")
 
     last_error = None
     for model in [GEMINI_MODEL, GEMINI_FALLBACK_MODEL]:
         try:
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
             resp = requests.post(url, json=payload, timeout=30)
+            logging.info(f"Gemini response status: {resp.status_code}")
             if resp.status_code == 200:
                 data = resp.json()
-                return data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "⚠️ Erro ao processar")
+                text = data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+                if text:
+                    return text
+                else:
+                    logging.error(f"Empty response from Gemini: {data}")
+                    last_error = "Resposta vazia do Gemini"
             else:
+                logging.error(f"Gemini error: {resp.status_code} - {resp.text}")
                 last_error = resp.text
         except Exception as e:
-            last_error = e
-    return f"⚠️ Erro: {last_error}"
+            logging.error(f"Exception calling Gemini: {e}")
+            last_error = str(e)
+    
+    logging.error(f"All Gemini models failed: {last_error}")
+    return f"⚠️ Erro ao processar: {last_error}"
 
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
