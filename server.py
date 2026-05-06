@@ -32,18 +32,26 @@ GEMINI_FALLBACK_MODEL = "gemini-2.0-flash-lite"
 async def get_user_api_key(user_id: str) -> Optional[str]:
     try:
         user_doc = await db.users.find_one({"user_id": user_id}, {"gemini_api_key": 1})
-        if user_doc and user_doc.get("gemini_api_key"):
-            return user_doc["gemini_api_key"]
+        if user_doc:
+            key = user_doc.get("gemini_api_key")
+            logging.info(f"Found API key for user {user_id}: {'Yes' if key else 'No'}")
+            return key
+        logging.warning(f"User {user_id} not found")
     except Exception as e:
-        logging.warning(f"Error fetching user API key: {e}")
+        logging.error(f"Error fetching user API key: {e}")
     return None
 
 async def call_llm(prompt: str, session_id: str = "default", system_message: str = "Você é um assistente financeiro inteligente.", raise_on_error: bool = False, user_api_key: Optional[str] = None, user_id: Optional[str] = None) -> str:
+    # If user_id provided but no user_api_key, try to fetch from database
+    if user_id and not user_api_key:
+        user_api_key = await get_user_api_key(user_id)
+        logging.info(f"Using API key from user profile: {user_api_key[:10] if user_api_key else None}...")
+    
     api_key = user_api_key or GOOGLE_GEMINI_API_KEY
     
     if not api_key:
-        logging.warning("GOOGLE_GEMINI_API_KEY not configured")
-        return "⚠️ Serviço de IA indisponível. Configure a API key no servidor."
+        logging.warning("No API key available")
+        return "⚠️ Configure sua API key do Gemini no Perfil para usar recursos de IA."
     
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={api_key}"
     payload = {"contents": [{"parts": [{"text": prompt}]}], "systemInstruction": {"parts": [{"text": system_message}]}}
