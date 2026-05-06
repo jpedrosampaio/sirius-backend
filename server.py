@@ -760,6 +760,8 @@ async def update_profile(request: Request, data: dict, session_token: Optional[s
     )
     
     updated_user = await db.users.find_one({"user_id": user.user_id}, {"_id": 0, "password": 0})
+    updated_user = updated_user or {}
+    updated_user.setdefault("gemini_api_key", None)
     return updated_user
 
 @api_router.get("/auth/birthday-check")
