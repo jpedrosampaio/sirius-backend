@@ -5321,12 +5321,12 @@ try:
             user_id=user.user_id
         )
         
-        return {
+return {
             "recommendations": response,
             "based_on": latest,
             "workouts_analyzed": len(workouts)
         }
-    
+
     except Exception as e:
         logging.error(f"Recommendations generation failed: {e}")
         return {
