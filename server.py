@@ -53,114 +53,9 @@ async def get_user_api_key(user_id: str) -> Optional[str]:
     return None
 
 async def get_freellm_api_key(user_id: str) -> Optional[str]:
-    try:
-        user_doc = await db.users.find_one({"user_id": user_id}, {"freellm_api_key": 1})
-        if user_doc:
-            key = user_doc.get("freellm_api_key")
-            logging.info(f"Found freeLLM key for user {user_id}: {'Yes' if key else 'No'}")
-            return key
-    except Exception as e:
-        logging.error(f"Error fetching freeLLM key: {e}")
     return None
 
-async def call_llm(prompt: str, session_id: str = "default", system_message: str = "Você é um assistente financeiro inteligente.", raise_on_error: bool = False, user_api_key: Optional[str] = None, user_id: Optional[str] = None) -> str:
-    # If user_id provided but no user_api_key, try to fetch from database
-    if user_id and not user_api_key:
-        user_api_key = await get_user_api_key(user_id)
-        logging.info(f"Using Gemini key from user profile: {user_api_key[:10] if user_api_key else None}...")
-    
-    # Priority: user Gemini key > user freeLLM key > TorGPT
-    if user_api_key:
-        # User has their own Gemini API key - use Gemini
-        api_key = user_api_key
-        result = await call_gemini(prompt, system_message, api_key)
-        if result and not result.startswith("⚠️"):
-            return result
-        logging.warning("User Gemini key failed, falling back to freeLLM")
-    
-    # Try user's freeLLM key
-    if user_id:
-        freellm_key = await get_freellm_api_key(user_id)
-        if freellm_key:
-            result = await call_free_llm_with_key(prompt, system_message, freellm_key)
-            if result and not result.startswith("⚠️"):
-                return result
-    
-    # Final fallback: TorGPT
-    logging.warning("All AI failed, trying TorGPT")
-    return await call_torgpt(prompt, system_message)
-
-async def call_gemini(prompt: str, system_message: str, api_key: str) -> str:
-    """Call Gemini API when user provides their own key"""
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={api_key}"
-    payload = {"contents": [{"parts": [{"text": prompt}]}], "systemInstruction": {"parts": [{"text": system_message}]}}
-    
-    logging.info(f"Calling Gemini with model: {GEMINI_MODEL}")
-    
-    for model in [GEMINI_MODEL, GEMINI_FALLBACK_MODEL]:
-        try:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
-            resp = requests.post(url, json=payload, timeout=30)
-            logging.info(f"Gemini response status: {resp.status_code}")
-            if resp.status_code == 200:
-                data = resp.json()
-                text = data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
-                if text:
-                    return text
-                else:
-                    logging.error(f"Empty response from Gemini: {data}")
-            else:
-                logging.error(f"Gemini error: {resp.status_code} - {resp.text}")
-        except Exception as e:
-            logging.error(f"Exception calling Gemini: {e}")
-    
-    return None
-
-async def call_free_llm(prompt: str, system_message: str = "Você é um assistente útil.") -> str:
-    """Fallback to freeLLM when no API key is available"""
-    logging.info(f"freeLLM API key configured: {bool(FREE_LLM_API_KEY)}")
-    
-    # Try freeLLM first (requires API key)
-    if FREE_LLM_API_KEY:
-        return await call_free_llm_with_key(prompt, system_message, FREE_LLM_API_KEY)
-    
-    logging.warning("No freeLLM API key configured, using TorGPT")
-    return await call_torgpt(prompt, system_message)
-
-async def call_free_llm_with_key(prompt: str, system_message: str, api_key: str) -> str:
-    """Call freeLLM with user's API key"""
-    try:
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json"
-        }
-        payload = {
-            "model": "free-fast",
-            "messages": [
-                {"role": "system", "content": system_message},
-                {"role": "user", "content": prompt}
-            ],
-            "temperature": 0.7
-        }
-        
-        resp = requests.post(
-            f"{FREE_LLM_BASE_URL}/chat/completions",
-            headers=headers,
-            json=payload,
-            timeout=30
-        )
-        logging.info(f"freeLLM response: {resp.status_code}")
-        
-        if resp.status_code == 200:
-            data = resp.json()
-            return data.get("choices", [{}])[0].get("message", {}).get("content", "")
-        else:
-            logging.error(f"freeLLM error: {resp.status_code} - {resp.text}")
-    except Exception as e:
-        logging.error(f"freeLLM exception: {e}")
-    
-    # Fallback to TorGPT if freeLLM fails or no key
-    return await call_torgpt(prompt, system_message)
+# ========== TORGPT ==========
 
 async def call_torgpt(prompt: str, system_message: str = "Você é um assistente útil.") -> str:
     """TorGPT fallback - no API key needed"""
@@ -270,7 +165,6 @@ class User(BaseModel):
     birth_date: Optional[str] = None
     bio: Optional[str] = None
     gemini_api_key: Optional[str] = None
-    freellm_api_key: Optional[str] = None
     created_at: datetime
 
 class UserCreate(BaseModel):
@@ -278,7 +172,6 @@ class UserCreate(BaseModel):
     password: str
     name: str
     gemini_api_key: Optional[str] = None
-    freellm_api_key: Optional[str] = None
 
 class UserLogin(BaseModel):
     email: str
@@ -737,7 +630,6 @@ async def register(user_data: UserCreate, response: Response):
         "xp": 0,
         "rank": "Recruta",
         "gemini_api_key": user_data.gemini_api_key,
-        "freellm_api_key": user_data.freellm_api_key,
         "created_at": datetime.now(timezone.utc).isoformat()
     }
     await db.users.insert_one(user_doc)
@@ -914,7 +806,7 @@ async def update_profile(request: Request, data: dict, session_token: Optional[s
     user = await get_current_user(authorization=auth_header, session_token=session_token)
     
     update_fields = {}
-    for field in ["name", "birth_date", "bio", "health_condition", "gemini_api_key", "freellm_api_key"]:
+    for field in ["name", "birth_date", "bio", "health_condition", "gemini_api_key"]:
         if field in data:
             update_fields[field] = data[field]
     
@@ -929,7 +821,6 @@ async def update_profile(request: Request, data: dict, session_token: Optional[s
     updated_user = await db.users.find_one({"user_id": user.user_id}, {"_id": 0, "password": 0})
     updated_user = updated_user or {}
     updated_user.setdefault("gemini_api_key", None)
-    updated_user.setdefault("freellm_api_key", None)
     return updated_user
 
 @api_router.get("/auth/birthday-check")
