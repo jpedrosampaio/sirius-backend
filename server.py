@@ -33,6 +33,9 @@ FREE_LLM_BASE_URL = os.environ.get('FREE_LLM_BASE_URL', 'https://api.freellm.xyz
 FREE_LLM_API_KEY = os.environ.get('FREE_LLM_API_KEY', '')
 TORGPT_URL = os.environ.get('TORGPT_URL', 'https://torgpt.space/api/v1/chat')
 
+FREETTS_URL = os.environ.get('FREETTS_URL', 'https://api.freetts.org')
+FREE_TTS_VOICE = os.environ.get('FREE_TTS_VOICE', 'pt-BR-FranciscaNeural')
+
 async def get_user_api_key(user_id: str) -> Optional[str]:
     try:
         user_doc = await db.users.find_one({"user_id": user_id}, {"gemini_api_key": 1})
@@ -150,6 +153,47 @@ async def call_torgpt(prompt: str, system_message: str = "Você é um assistente
     except Exception as e:
         logging.error(f"TorGPT exception: {e}")
         return "⚠️ Services temporariamente indisponíveis. Tente novamente mais tarde."
+
+# ========== FREE TTS ==========
+
+@api_router.post("/tts")
+async def text_to_speech(request: Request, data: dict, session_token: Optional[str] = Cookie(None)):
+    """Text to speech using free TTS API"""
+    auth_header = request.headers.get("Authorization")
+    user = await get_current_user(authorization=auth_header, session_token=session_token)
+    
+    text = data.get("text", "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Texto vazio")
+    
+    # Truncate if too long (FreeTTS limit: 1000 chars)
+    text = text[:1000]
+    
+    try:
+        # Generate speech
+        payload = {
+            "text": text,
+            "voice": FREE_TTS_VOICE,
+            "rate": "+0%",
+            "pitch": "+0Hz"
+        }
+        
+        resp = requests.post(f"{FREETTS_URL}/tts", json=payload, timeout=30)
+        
+        if resp.status_code == 200:
+            result = resp.json()
+            file_id = result.get("file_id")
+            
+            if file_id:
+                # Get audio URL
+                audio_url = f"{FREETTS_URL}/download/{file_id}"
+                return {"audio_url": audio_url, "file_id": file_id}
+        
+        logging.error(f"FreeTTS error: {resp.status_code} - {resp.text}")
+        return None
+    except Exception as e:
+        logging.error(f"FreeTTS exception: {e}")
+        return None
 
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
