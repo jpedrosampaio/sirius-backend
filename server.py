@@ -181,7 +181,11 @@ async def text_to_speech(request: Request, data: dict, session_token: Optional[s
             "pitch": "+0Hz"
         }
         
+        logging.info(f"Calling FreeTTS with voice: {FREE_TTS_VOICE}")
+        
         resp = requests.post(f"{FREETTS_URL}/tts", json=payload, timeout=30)
+        
+        logging.info(f"FreeTTS response: {resp.status_code} - {resp.text[:200] if resp.text else 'empty'}")
         
         if resp.status_code == 200:
             result = resp.json()
@@ -193,6 +197,7 @@ async def text_to_speech(request: Request, data: dict, session_token: Optional[s
                 return {"audio_url": audio_url, "file_id": file_id}
         
         logging.error(f"FreeTTS error: {resp.status_code} - {resp.text}")
+        # Return null to trigger fallback on frontend
         return None
     except Exception as e:
         logging.error(f"FreeTTS exception: {e}")
