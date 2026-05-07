@@ -29,6 +29,10 @@ GOOGLE_GEMINI_API_KEY = os.environ.get('GOOGLE_GEMINI_API_KEY', '')
 GEMINI_MODEL = "gemini-2.5-flash"
 GEMINI_FALLBACK_MODEL = "gemini-2.0-flash-lite"
 
+FREE_LLM_BASE_URL = os.environ.get('FREE_LLM_BASE_URL', 'https://api.freellm.xyz/v1')
+FREE_LLM_API_KEY = os.environ.get('FREE_LLM_API_KEY', '')
+TORGPT_URL = os.environ.get('TORGPT_URL', 'https://torgpt.space/api/v1/chat')
+
 async def get_user_api_key(user_id: str) -> Optional[str]:
     try:
         user_doc = await db.users.find_one({"user_id": user_id}, {"gemini_api_key": 1})
@@ -50,8 +54,8 @@ async def call_llm(prompt: str, session_id: str = "default", system_message: str
     api_key = user_api_key or GOOGLE_GEMINI_API_KEY
     
     if not api_key:
-        logging.warning("No API key available")
-        return "⚠️ Configure sua API key do Gemini no Perfil para usar recursos de IA."
+        logging.warning("No API key, using freeLLM fallback")
+        return await call_free_llm(prompt, system_message)
     
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={api_key}"
     payload = {"contents": [{"parts": [{"text": prompt}]}], "systemInstruction": {"parts": [{"text": system_message}]}}
@@ -80,7 +84,63 @@ async def call_llm(prompt: str, session_id: str = "default", system_message: str
             last_error = str(e)
     
     logging.error(f"All Gemini models failed: {last_error}")
-    return f"⚠️ Erro ao processar: {last_error}"
+    return await call_free_llm(prompt, system_message)
+
+async def call_free_llm(prompt: str, system_message: str = "Você é um assistente útil.") -> str:
+    """Fallback to freeLLM when no API key is available"""
+    # Try freeLLM first
+    if FREE_LLM_API_KEY:
+        try:
+            headers = {
+                "Authorization": f"Bearer {FREE_LLM_API_KEY}",
+                "Content-Type": "application/json"
+            }
+            payload = {
+                "model": "free-fast",
+                "messages": [
+                    {"role": "system", "content": system_message},
+                    {"role": "user", "content": prompt}
+                ],
+                "temperature": 0.7
+            }
+            
+            resp = requests.post(
+                f"{FREE_LLM_BASE_URL}/chat/completions",
+                headers=headers,
+                json=payload,
+                timeout=30
+            )
+            
+            if resp.status_code == 200:
+                data = resp.json()
+                return data.get("choices", [{}])[0].get("message", {}).get("content", "")
+            else:
+                logging.error(f"freeLLM error: {resp.status_code} - {resp.text}")
+        except Exception as e:
+            logging.error(f"freeLLM exception: {e}")
+    
+    # Fallback to TorGPT if freeLLM fails or no key
+    return await call_torgpt(prompt, system_message)
+
+async def call_torgpt(prompt: str, system_message: str = "Você é um assistente útil.") -> str:
+    """TorGPT fallback - no API key needed"""
+    try:
+        payload = {
+            "message": f"{system_message}\n\n{prompt}",
+            "model": "auto"
+        }
+        
+        resp = requests.post(TORGPT_URL, json=payload, timeout=30)
+        
+        if resp.status_code == 200:
+            data = resp.json()
+            return data.get("response", data.get("message", ""))
+        else:
+            logging.error(f"TorGPT error: {resp.status_code} - {resp.text}")
+            return "⚠️ Services temporariamente indisponíveis. Tente novamente mais tarde."
+    except Exception as e:
+        logging.error(f"TorGPT exception: {e}")
+        return "⚠️ Services temporariamente indisponíveis. Tente novamente mais tarde."
 
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
