@@ -31,6 +31,7 @@ GEMINI_FALLBACK_MODEL = "gemini-2.0-flash-lite"
 
 FREE_LLM_BASE_URL = os.environ.get('FREE_LLM_BASE_URL', 'https://api.freellm.xyz/v1')
 FREE_LLM_API_KEY = os.environ.get('FREE_LLM_API_KEY', '')
+OPENAI_FREE_KEY = os.environ.get('OPENAI_FREE_KEY', '')
 TORGPT_URL = os.environ.get('TORGPT_URL', 'https://torgpt.space/api/v1/chat')
 
 FREETTS_URL = os.environ.get('FREETTS_URL', 'https://api.freetts.org')
@@ -103,7 +104,9 @@ async def call_gemini(prompt: str, system_message: str, api_key: str) -> str:
 
 async def call_free_llm(prompt: str, system_message: str = "Você é um assistente útil.") -> str:
     """Fallback to freeLLM when no API key is available"""
-    # Try freeLLM first
+    logging.info(f"freeLLM API key configured: {bool(FREE_LLM_API_KEY)}")
+    
+    # Try freeLLM first (requires API key)
     if FREE_LLM_API_KEY:
         try:
             headers = {
@@ -125,6 +128,7 @@ async def call_free_llm(prompt: str, system_message: str = "Você é um assisten
                 json=payload,
                 timeout=30
             )
+            logging.info(f"freeLLM response: {resp.status_code}")
             
             if resp.status_code == 200:
                 data = resp.json()
