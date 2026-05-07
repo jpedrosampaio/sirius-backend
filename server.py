@@ -55,6 +55,36 @@ async def get_user_api_key(user_id: str) -> Optional[str]:
 async def get_freellm_api_key(user_id: str) -> Optional[str]:
     return None
 
+# ========== LLM CALLS ==========
+
+async def call_llm(prompt: str, session_id: str = "default", system_message: str = "Você é um assistente útil.", user_id: Optional[str] = None) -> str:
+    """Main LLM function - Gemini first, then TorGPT fallback"""
+    
+    # Try user's Gemini key first
+    if user_id:
+        user_api_key = await get_user_api_key(user_id)
+        if user_api_key:
+            result = await call_gemini(prompt, system_message, user_api_key)
+            if result and not result.startswith("⚠️"):
+                return result
+    
+    # Fallback to TorGPT
+    return await call_torgpt(prompt, system_message)
+
+async def call_gemini(prompt: str, system_message: str, api_key: str) -> str:
+    """Call Gemini API"""
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={api_key}"
+    payload = {"contents": [{"parts": [{"text": prompt}]}], "systemInstruction": {"parts": [{"text": system_message}]}}
+    
+    try:
+        resp = requests.post(url, json=payload, timeout=30)
+        if resp.status_code == 200:
+            data = resp.json()
+            return data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+    except Exception as e:
+        logging.error(f"Gemini error: {e}")
+    return None
+
 # ========== TORGPT ==========
 
 async def call_torgpt(prompt: str, system_message: str = "Você é um assistente útil.") -> str:
