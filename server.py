@@ -51,18 +51,31 @@ async def call_llm(prompt: str, session_id: str = "default", system_message: str
         user_api_key = await get_user_api_key(user_id)
         logging.info(f"Using API key from user profile: {user_api_key[:10] if user_api_key else None}...")
     
-    api_key = user_api_key or GOOGLE_GEMINI_API_KEY
+    # Priority: user has their own key > freeLLM > TorGPT
+    if user_api_key:
+        # User has their own API key - use Gemini
+        api_key = user_api_key
+        result = await call_gemini(prompt, system_message, api_key)
+        if result and not result.startswith("⚠️"):
+            return result
+        logging.warning("User API key failed, falling back to freeLLM")
     
-    if not api_key:
-        logging.warning("No API key, using freeLLM fallback")
-        return await call_free_llm(prompt, system_message)
+    # Use freeLLM as primary (free, no key needed if env configured)
+    result = await call_free_llm(prompt, system_message)
+    if result and not result.startswith("⚠️"):
+        return result
     
+    # Final fallback: TorGPT
+    logging.warning("freeLLM failed, trying TorGPT")
+    return await call_torgpt(prompt, system_message)
+
+async def call_gemini(prompt: str, system_message: str, api_key: str) -> str:
+    """Call Gemini API when user provides their own key"""
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={api_key}"
     payload = {"contents": [{"parts": [{"text": prompt}]}], "systemInstruction": {"parts": [{"text": system_message}]}}
     
     logging.info(f"Calling Gemini with model: {GEMINI_MODEL}")
-
-    last_error = None
+    
     for model in [GEMINI_MODEL, GEMINI_FALLBACK_MODEL]:
         try:
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
@@ -75,16 +88,12 @@ async def call_llm(prompt: str, session_id: str = "default", system_message: str
                     return text
                 else:
                     logging.error(f"Empty response from Gemini: {data}")
-                    last_error = "Resposta vazia do Gemini"
             else:
                 logging.error(f"Gemini error: {resp.status_code} - {resp.text}")
-                last_error = resp.text
         except Exception as e:
             logging.error(f"Exception calling Gemini: {e}")
-            last_error = str(e)
     
-    logging.error(f"All Gemini models failed: {last_error}")
-    return await call_free_llm(prompt, system_message)
+    return None
 
 async def call_free_llm(prompt: str, system_message: str = "Você é um assistente útil.") -> str:
     """Fallback to freeLLM when no API key is available"""
