@@ -36,6 +36,9 @@ TORGPT_URL = os.environ.get('TORGPT_URL', 'https://torgpt.space/api/v1/chat')
 FREETTS_URL = os.environ.get('FREETTS_URL', 'https://api.freetts.org')
 FREE_TTS_VOICE = os.environ.get('FREE_TTS_VOICE', 'pt-BR-FranciscaNeural')
 
+EIDOS_URL = os.environ.get('EIDOS_URL', 'https://eidosspeech.xyz/api/v1/tts')
+EIDOS_API_KEY = os.environ.get('EIDOS_API_KEY', '')
+
 async def get_user_api_key(user_id: str) -> Optional[str]:
     try:
         user_doc = await db.users.find_one({"user_id": user_id}, {"gemini_api_key": 1})
@@ -159,21 +162,9 @@ api_router = APIRouter(prefix="/api")
 
 # ========== FREE TTS ==========
 
-@api_router.post("/tts")
-async def text_to_speech(request: Request, data: dict, session_token: Optional[str] = Cookie(None)):
-    """Text to speech using free TTS API"""
-    auth_header = request.headers.get("Authorization")
-    user = await get_current_user(authorization=auth_header, session_token=session_token)
-    
-    text = data.get("text", "").strip()
-    if not text:
-        raise HTTPException(status_code=400, detail="Texto vazio")
-    
-    # Truncate if too long (FreeTTS limit: 1000 chars)
-    text = text[:1000]
-    
+async def call_free_tts(text: str) -> Optional[str]:
+    """Try FreeTTS first (might need specific voice format)"""
     try:
-        # Generate speech
         payload = {
             "text": text,
             "voice": FREE_TTS_VOICE,
@@ -181,27 +172,67 @@ async def text_to_speech(request: Request, data: dict, session_token: Optional[s
             "pitch": "+0Hz"
         }
         
-        logging.info(f"Calling FreeTTS with voice: {FREE_TTS_VOICE}")
-        
         resp = requests.post(f"{FREETTS_URL}/tts", json=payload, timeout=30)
-        
-        logging.info(f"FreeTTS response: {resp.status_code} - {resp.text[:200] if resp.text else 'empty'}")
         
         if resp.status_code == 200:
             result = resp.json()
             file_id = result.get("file_id")
-            
             if file_id:
-                # Get audio URL
-                audio_url = f"{FREETTS_URL}/download/{file_id}"
-                return {"audio_url": audio_url, "file_id": file_id}
-        
-        logging.error(f"FreeTTS error: {resp.status_code} - {resp.text}")
-        # Return null to trigger fallback on frontend
-        return None
+                return f"{FREETTS_URL}/download/{file_id}"
     except Exception as e:
-        logging.error(f"FreeTTS exception: {e}")
+        logging.error(f"FreeTTS error: {e}")
+    return None
+
+async def call_eidos_tts(text: str) -> Optional[str]:
+    """Try eidosSpeech (Edge TTS) - needs API key"""
+    if not EIDOS_API_KEY:
         return None
+    
+    try:
+        payload = {
+            "text": text,
+            "voice": "pt-BR-FranciscaNeural"
+        }
+        headers = {
+            "X-API-Key": EIDOS_API_KEY,
+            "Content-Type": "application/json"
+        }
+        
+        resp = requests.post(EIDOS_URL, json=payload, headers=headers, timeout=30)
+        
+        if resp.status_code == 200:
+            # Returns audio directly
+            return resp.content
+    except Exception as e:
+        logging.error(f"eidosSpeech error: {e}")
+    return None
+
+@api_router.post("/tts")
+async def text_to_speech(request: Request, data: dict, session_token: Optional[str] = Cookie(None)):
+    """Text to speech - tries multiple free providers"""
+    auth_header = request.headers.get("Authorization")
+    user = await get_current_user(authorization=auth_header, session_token=session_token)
+    
+    text = data.get("text", "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Texto vazio")
+    
+    text = text[:1000]
+    
+    # Try FreeTTS first
+    audio_url = await call_free_tts(text)
+    if audio_url:
+        return {"audio_url": audio_url}
+    
+    # Try eidosSpeech if configured
+    audio_data = await call_eidos_tts(text)
+    if audio_data:
+        # Return base64 audio
+        import base64
+        b64 = base64.b64encode(audio_data).decode()
+        return {"audio_data": b64, "format": "mp3"}
+    
+    return None
 
 class User(BaseModel):
     model_config = ConfigDict(extra="ignore")
