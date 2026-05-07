@@ -154,6 +154,9 @@ async def call_torgpt(prompt: str, system_message: str = "Você é um assistente
         logging.error(f"TorGPT exception: {e}")
         return "⚠️ Services temporariamente indisponíveis. Tente novamente mais tarde."
 
+app = FastAPI()
+api_router = APIRouter(prefix="/api")
+
 # ========== FREE TTS ==========
 
 @api_router.post("/tts")
@@ -194,9 +197,6 @@ async def text_to_speech(request: Request, data: dict, session_token: Optional[s
     except Exception as e:
         logging.error(f"FreeTTS exception: {e}")
         return None
-
-app = FastAPI()
-api_router = APIRouter(prefix="/api")
 
 class User(BaseModel):
     model_config = ConfigDict(extra="ignore")
